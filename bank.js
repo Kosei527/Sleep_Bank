@@ -1,3 +1,5 @@
+const { info, time } = require("node:console");
+
 //日付の文字列をn列ずらす　（"2026-10-28", -1 → "2026-10-27"）
 function addDays(dateStr, n) {
     const d = new Date(dateStr + "T00:00:00Z");
@@ -73,6 +75,45 @@ function calcDebt(history, today) {
     // 5. 借金と連続を返す
     return { debt, streak };
 }
+
+// データの保存
+function save(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+}
+
+//名前で読む、まだ何もなければdefaultVlalueを返す
+function load(key, defaultValue) {
+    const text = localStorage.getItem(key);
+    if (text === null){
+        return defaultValue;
+    }
+    return JSON.parse(text);
+}
+
+//早送り込みの[今]を、日時オブジェクトで返す
+function now() {
+    const timeOffset = load("timeOffset", 0);
+    const offsetMs = timeOffset * 1000 * 60;
+    return new Date(Date.now() + offsetMs);
+}
+
+// 日時オブジェクトを "2026-10-30T03:23" の形の文字にする
+function formatDateTime(d) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+        + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+// 早送り込みの「今」を "2026-10-30T03:23" の形で返す
+function nowString() {
+    return formatDateTime(now());
+}
+
+// 早送り込みの「今日」を "2026-10-30" の形で返す
+function todayString() {
+    return nowString().slice(0,10);
+}
+
 // Node.jsでテストするための1行（ブラウザでは無視される）
 if (typeof module !== "undefined") {
     module.exports = { calcDebt };
