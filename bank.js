@@ -1,3 +1,5 @@
+const { settings } = require("node:cluster");
+
 const INTEREST_RATE = 1.1;    // 1日あたりの利息（10%）
 const COINS_PER_HOUR = 100;   // 睡眠1時間＝100コイン
 
@@ -121,37 +123,71 @@ function todayString() {
     return nowString().slice(0,10);
 }
 
-//おやすみを記録
+/* おやすみの流れ
+
+1. 設定がない → 失敗（NO_SETTINGS）
+2. もう寝ている → 失敗（ALREADY_SLEEPING）
+3. 今の時刻を sleptAt に仮置きする
+4. 成功を返す { ok, sleptAt }
+*/
 function goodnight() {
+    // 1. 設定がない → 失敗
     if (!load("settings", null)){ //保存されていない、null、偽
         return { ok: false, code: "NO_SETTINGS", reason: "先に目標睡眠時間を設定してね" }
     }
+    // 2. もう寝ている → 失敗
     if (load("sleptAt", null)){
         return { ok: false, code: "ALREADY_SLEEPING", reason: "もう寝ています" }
     }
+    // 3. 今の時刻を sleptAt に仮置きする
     const nowTime = nowString(); //現在時刻
     save("sleptAt", nowTime);
+    // 4. 成功を返す { ok, sleptAt }
     return {ok: true, sleptAt:nowTime};
 }
 
-//おはようを記録
+/* おはようの流れ
+
+1. 寝ていない（sleptAt がない） → 失敗（NOT_SLEEPING）
+2. 準備
+   ・起きた時刻 ＝ 今（now() を呼ぶのはここの1回だけ）
+   ・今日 ＝ 起きた時刻から日付だけ切り出す
+   ・その夜 ＝ 今日の1日前（0時過ぎに寝ても前日扱い）
+   ・睡眠時間（分）、履歴
+3. 16時間以上たっている → 失敗（FORGOT_MORNING）。手入力に回す
+4. その夜の記録がもうある → 失敗（ALREADY_RECORDED）
+5. 足す前の借金 ＝ calcDebt(今の履歴, その夜) … 一昨日の夜まで
+6. 履歴に1行足して保存、sleptAt を空にする（おはようボタン経由なので manual は false）
+7. 足した後の借金 ＝ calcDebt(新しい履歴, 今日) … 昨日の夜まで
+8. 成功を返す
+   ・change：後 − 前（利息込みの増減。マイナスなら返済）
+   ・achieved：目標ちょうども達成（calcDebt と同じ基準）
+*/
 function goodmorning() {
+    // 1. 寝ていない（sleptAt がない） → 失敗
     const sleptAt = load("sleptAt", null);
     if(!sleptAt){
         return { ok: false, code: "NOT_SLEEPING", reason: "まだおやすみしていません" }
     }
+    // 2. 準備
     const wokeAt = nowString();
     const today  = wokeAt.slice(0,10);
     const lastNight = addDays(today, -1)
     const sleepMinutes = sleepMinutesBetween(sleptAt, wokeAt)
     const history = load("history", []);
+
+    // 3. 16時間以上 → 押し忘れ
     if (sleepMinutes >=  960){
         return { ok: false, code: "FORGOT_MORNING", reason: "おはようの押し忘れかも。起きた時刻を入力してね" }
     }
+    // 4. その夜の記録がもうある → 失敗
     if(history.find(r => r.date === lastNight)){
         return { ok: false, code: "ALREADY_RECORDED", reason: "もう夜の記録があるよ" }
     }
+    // 5. 足す前の借金
     const debtBefore = calcDebt(history, lastNight).debt;
+
+    // 6. 履歴に一行足して保存、sleptAt　を空に
     const record = {
          date: lastNight,
          sleptAt: sleptAt,
@@ -162,8 +198,29 @@ function goodmorning() {
     history.push(record);
     save("history", history);
     save("sleptAt", null);
-    const debtAfter  =calcDebt(history, today).debt;
-    return { ok: true, change: debtAfter - debtBefore, debt: debtAfter, sleepMinutes, achieved: sleepMinutes >= record.targetHours * 60};
+
+    // 7. 足した後の借金
+    const debtAfter  = calcDebt(history, today).debt;
+
+    //8. 成功を返す
+    return { ok: true,
+        change: debtAfter - debtBefore,
+        debt: debtAfter,
+        sleepMinutes,
+        achieved: sleepMinutes >= record.targetHours * 60
+    };
+}
+
+//ユーザーから受け取る起床予定時間と、目標睡眠時間をsettingsに保存する
+function saveettings (targetHours, wakeTime){
+    if(targetHours >= 3, targetHours < 12){
+        return { ok: false, code: "INVALID_TIME", reason: "睡眠時間は3時間から12時間の間にしてね" }
+    }
+     const record = {
+         targetHours: targetHours,
+         wakeTime: wakeTime
+    };
+    settings.push(record);
 }
 
 
