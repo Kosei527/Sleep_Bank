@@ -1,10 +1,17 @@
-const { info, time } = require("node:console");
-
 //日付の文字列をn列ずらす　（"2026-10-28", -1 → "2026-10-27"）
 function addDays(dateStr, n) {
     const d = new Date(dateStr + "T00:00:00Z");
     d.setUTCDate(d.getUTCDate() + n);
     return d.toISOString().slice(0, 10);
+}
+
+// 寝た時刻と起きた時刻（文字）から、睡眠時間（分）を返す
+function sleepMinutesBetween(sleptAt, wokeAt) {
+        const woke = new Date(wokeAt);
+        const slept = new Date(sleptAt);
+        const diffMs = woke - slept;
+        const sleepMinutes = diffMs / (1000 * 60); //単位を分にする
+        return sleepMinutes;
 }
 
 /* 全体の流れ
@@ -47,10 +54,7 @@ function calcDebt(history, today) {
         const record = history.find(r => r.date === day); //=>はアロー関数 rを受け取って、条件を返す関数
         if (record) { //record Noneならundefined
             // 4-3
-            const woke = new Date(record.wokeAt);
-            const slept = new Date(record.sleptAt);
-            const diffMs = woke - slept;
-            const sleepMinutes = diffMs / (1000 * 60); //単位を分にする
+            const sleepMinutes = sleepMinutesBetween(record.sleptAt,record.wokeAt);
             const diffMinutes = (record.targetHours * 60) - sleepMinutes;
             if (diffMinutes <= 0) {
                 debt = (debt - Math.floor((Math.abs(diffMinutes) * 100 / 60)));
@@ -113,6 +117,39 @@ function nowString() {
 function todayString() {
     return nowString().slice(0,10);
 }
+
+//おやすみを記録
+function goodnight() {
+    if (!load("settings", null)){ //保存されていない、null、偽
+        return { ok: false, code: "NO_SETTINGS", reason: "先に目標睡眠時間を設定してね" }
+    }
+    if (load("sleptAt", null)){
+        return { ok: false, code: "ALREADY_SLEEPING", reason: "もう寝ています" }
+    }
+    const nowTime = nowString(); //現在時刻
+    save("sleptAt", nowTime);
+    return {ok: true, sleptAt:nowTime};
+}
+
+//おはようを記録
+function goodmorning() {
+    const sleptAt = load("sleptAt", null);
+    if(!sleptAt){
+        return { ok: false, code: "NO_SLEEPING", reason: "まだおやすみしていません" }
+    }
+    const wokeAt = nowString();
+    const lastNight = addDays(todayString(), -1)
+    const sleepMinutes = sleepMinutesBetween(sleptAt, wokeAt)
+    const history = load("history", []);
+    if (sleepMinutes >=  960){
+        return { ok: false, code: "FORGOT_MORNING", reason: "おはようの押し忘れかも。起きた時刻を入力してね" }
+    }
+    if(history.find(r => r.date === lastNight)){
+        return { ok: false, code: "ALREADY_RECORDED", reason: "もう夜の記録があるよ" }
+    }
+
+}
+
 
 // Node.jsでテストするための1行（ブラウザでは無視される）
 if (typeof module !== "undefined") {
