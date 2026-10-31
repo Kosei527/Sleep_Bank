@@ -105,10 +105,10 @@ function now() {
 }
 
 // 日時オブジェクトを "2026-10-30T03:23" の形の文字にする
-function formatDateTime(d) {
+function formatDateTime(date) {
     const pad = (n) => String(n).padStart(2, "0");
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
-        + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate())
+        + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes());
 }
 
 // 早送り込みの「今」を "2026-10-30T03:23" の形で返す
@@ -138,10 +138,11 @@ function goodnight() {
 function goodmorning() {
     const sleptAt = load("sleptAt", null);
     if(!sleptAt){
-        return { ok: false, code: "NO_SLEEPING", reason: "まだおやすみしていません" }
+        return { ok: false, code: "NOT_SLEEPING", reason: "まだおやすみしていません" }
     }
     const wokeAt = nowString();
-    const lastNight = addDays(todayString(), -1)
+    const today  = wokeAt.slice(0,10);
+    const lastNight = addDays(today, -1)
     const sleepMinutes = sleepMinutesBetween(sleptAt, wokeAt)
     const history = load("history", []);
     if (sleepMinutes >=  960){
@@ -150,7 +151,19 @@ function goodmorning() {
     if(history.find(r => r.date === lastNight)){
         return { ok: false, code: "ALREADY_RECORDED", reason: "もう夜の記録があるよ" }
     }
-
+    const debtBefore = calcDebt(history, lastNight).debt;
+    const record = {
+         date: lastNight,
+         sleptAt: sleptAt,
+         wokeAt: wokeAt,
+         targetHours: load("settings", null).targetHours,
+         manual: false 
+    };
+    history.push(record);
+    save("history", history);
+    save("sleptAt", null);
+    const debtAfter  =calcDebt(history, today).debt;
+    return { ok: true, change: debtAfter - debtBefore, debt: debtAfter, sleepMinutes, achieved: sleepMinutes >= record.targetHours * 60};
 }
 
 
